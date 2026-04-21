@@ -655,6 +655,19 @@ function PhotoCard({
 // Voting screen
 // ---------------------------------------------------------------------------
 function VotingScreen({ email, onDone }) {
+  // Fisher-Yates shuffle — each session gets a fresh order, guaranteeing
+  // every photo appears exactly once without duplicates.
+  const deckRef = useRef(null);
+  if (deckRef.current === null) {
+    const deck = [...PHOTOS];
+    for (let i = deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    deckRef.current = deck;
+  }
+  const DECK = deckRef.current;
+
   const [leftIdx, setLeftIdx]       = useState(0);
   const [rightIdx, setRightIdx]     = useState(1);
   const [nextIdx, setNextIdx]       = useState(2);
@@ -674,8 +687,8 @@ function VotingScreen({ email, onDone }) {
     setPicked(side);
     setLocked(true);
 
-    const leftPhoto    = PHOTOS[leftIdx];
-    const rightPhoto   = PHOTOS[rightIdx];
+    const leftPhoto    = DECK[leftIdx];
+    const rightPhoto   = DECK[rightIdx];
     const selected     = side === "left" ? leftPhoto : rightPhoto;
     const rejected     = side === "left" ? rightPhoto : leftPhoto;
     const voteRecord   = {
@@ -726,8 +739,8 @@ function VotingScreen({ email, onDone }) {
     }, 620);
   };
 
-  const leftPhoto  = PHOTOS[leftIdx];
-  const rightPhoto = PHOTOS[rightIdx];
+  const leftPhoto  = DECK[leftIdx];
+  const rightPhoto = DECK[rightIdx];
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center px-4 sm:px-6 py-6 sm:py-8">
@@ -1530,124 +1543,162 @@ function AdminScreen({ onLogout }) {
           </div>
         )}
 
-        {/* Voters list */}
-        {voters.length > 0 && (
-          <>
-            <SectionHeader title={`Voters (${voters.length})`} icon={Users} />
-            <div
-              className="rounded-2xl overflow-hidden mb-14"
-              style={{
-                background: COLORS.card,
-                border: `1px solid ${COLORS.line}`,
-              }}
-            >
-              {voters.map((v, i) => {
-                const session = sessions.find(
-                  (s) => s.email && s.email.toLowerCase() === v
-                );
-                const winnerPhotoId = session?.finalWinnerPhotoId;
-                const isConfirming  = confirmUserReset === v;
-                const isResetting   = resettingUser === v;
-                return (
-                  <div
-                    key={v}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
-                    style={{
-                      borderTop: i === 0 ? "none" : `1px solid ${COLORS.line}`,
-                      background: isConfirming ? "#FDF3EF" : "transparent",
-                      transition: "background 160ms ease",
-                    }}
-                  >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <span
-                        className="pd-serif-italic flex-shrink-0"
-                        style={{
-                          color: COLORS.muted,
-                          fontSize: 14,
-                          width: 28,
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
-                        {i + 1}.
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div
-                          className="text-[13px] truncate"
-                          style={{ color: COLORS.ink }}
+        {/* Participants list — everyone on the whitelist, admin excluded */}
+        {(() => {
+          const participants = [...ALLOWED_EMAILS]
+            .filter((e) => e !== ADMIN_EMAIL)
+            .sort((a, b) => a.localeCompare(b));
+          const votedSet = new Set(voters);
+          const votedCount = participants.filter((e) => votedSet.has(e)).length;
+
+          return (
+            <>
+              <SectionHeader
+                title={`Participants (${votedCount}/${participants.length} voted)`}
+                icon={Users}
+              />
+              <div
+                className="rounded-2xl overflow-hidden mb-14"
+                style={{
+                  background: COLORS.card,
+                  border: `1px solid ${COLORS.line}`,
+                }}
+              >
+                {participants.map((v, i) => {
+                  const hasVoted = votedSet.has(v);
+                  const session = hasVoted
+                    ? sessions.find(
+                        (s) => s.email && s.email.toLowerCase() === v
+                      )
+                    : null;
+                  const winnerPhotoId = session?.finalWinnerPhotoId;
+                  const isConfirming  = confirmUserReset === v;
+                  const isResetting   = resettingUser === v;
+                  return (
+                    <div
+                      key={v}
+                      className="flex items-center justify-between gap-3 px-4 py-3"
+                      style={{
+                        borderTop: i === 0 ? "none" : `1px solid ${COLORS.line}`,
+                        background: isConfirming ? "#FDF3EF" : "transparent",
+                        transition: "background 160ms ease",
+                      }}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <span
+                          className="pd-serif-italic flex-shrink-0"
+                          style={{
+                            color: COLORS.muted,
+                            fontSize: 14,
+                            width: 28,
+                            fontVariantNumeric: "tabular-nums",
+                          }}
                         >
-                          {v}
-                        </div>
-                        {winnerPhotoId && (
+                          {i + 1}.
+                        </span>
+                        <div className="min-w-0 flex-1">
                           <div
-                            className="text-[11px] mt-0.5"
+                            className="text-[13px] truncate"
+                            style={{
+                              color: hasVoted ? COLORS.ink : COLORS.muted,
+                            }}
+                          >
+                            {v}
+                          </div>
+                          {hasVoted && winnerPhotoId && (
+                            <div
+                              className="text-[11px] mt-0.5"
+                              style={{ color: COLORS.muted }}
+                            >
+                              pick · {winnerPhotoId}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Status column: voted badge OR empty/pending marker */}
+                      <div className="flex-shrink-0 flex items-center gap-2.5">
+                        {hasVoted ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] tracking-[0.16em] uppercase"
+                            style={{
+                              background: "#E8F0E5",
+                              color: "#2F5A3A",
+                              border: "1px solid #C9DCC5",
+                            }}
+                          >
+                            ✓ Voted
+                          </span>
+                        ) : (
+                          <span
+                            className="text-[10px] tracking-[0.22em] uppercase"
                             style={{ color: COLORS.muted }}
                           >
-                            pick · {winnerPhotoId}
+                            — Pending
+                          </span>
+                        )}
+
+                        {/* Per-user reset — only for voters */}
+                        {hasVoted && !isConfirming && (
+                          <button
+                            onClick={() => setConfirmUserReset(v)}
+                            title="Reset this voter"
+                            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] tracking-[0.08em] uppercase"
+                            style={{
+                              background: "transparent",
+                              color: COLORS.muted,
+                              border: `1px solid ${COLORS.line}`,
+                              transition: "all 160ms ease",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.color = COLORS.accent;
+                              e.currentTarget.style.borderColor = COLORS.accent;
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.color = COLORS.muted;
+                              e.currentTarget.style.borderColor = COLORS.line;
+                            }}
+                          >
+                            <Trash2 size={12} /> Reset
+                          </button>
+                        )}
+                        {hasVoted && isConfirming && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleResetUser(v)}
+                              disabled={isResetting}
+                              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] tracking-[0.08em] uppercase font-medium"
+                              style={{
+                                background: COLORS.accent,
+                                color: "#fffdf7",
+                                opacity: isResetting ? 0.7 : 1,
+                                cursor: isResetting ? "wait" : "pointer",
+                              }}
+                            >
+                              {isResetting ? "…" : "Confirm"}
+                            </button>
+                            <button
+                              onClick={() => setConfirmUserReset(null)}
+                              disabled={isResetting}
+                              className="rounded-lg px-2.5 py-1.5 text-[11px] tracking-[0.08em] uppercase"
+                              style={{
+                                background: "transparent",
+                                color: COLORS.inkSoft,
+                                border: `1px solid ${COLORS.line}`,
+                              }}
+                            >
+                              Cancel
+                            </button>
                           </div>
                         )}
                       </div>
                     </div>
-
-                    {/* Per-user reset */}
-                    <div className="flex-shrink-0">
-                      {!isConfirming ? (
-                        <button
-                          onClick={() => setConfirmUserReset(v)}
-                          title="Reset this voter"
-                          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] tracking-[0.08em] uppercase"
-                          style={{
-                            background: "transparent",
-                            color: COLORS.muted,
-                            border: `1px solid ${COLORS.line}`,
-                            transition: "all 160ms ease",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.color = COLORS.accent;
-                            e.currentTarget.style.borderColor = COLORS.accent;
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.color = COLORS.muted;
-                            e.currentTarget.style.borderColor = COLORS.line;
-                          }}
-                        >
-                          <Trash2 size={12} /> Reset
-                        </button>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => handleResetUser(v)}
-                            disabled={isResetting}
-                            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] tracking-[0.08em] uppercase font-medium"
-                            style={{
-                              background: COLORS.accent,
-                              color: "#fffdf7",
-                              opacity: isResetting ? 0.7 : 1,
-                              cursor: isResetting ? "wait" : "pointer",
-                            }}
-                          >
-                            {isResetting ? "…" : "Confirm"}
-                          </button>
-                          <button
-                            onClick={() => setConfirmUserReset(null)}
-                            disabled={isResetting}
-                            className="rounded-lg px-2.5 py-1.5 text-[11px] tracking-[0.08em] uppercase"
-                            style={{
-                              background: "transparent",
-                              color: COLORS.inkSoft,
-                              border: `1px solid ${COLORS.line}`,
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
 
         {/* Danger zone */}
         <SectionHeader title="Danger Zone" dangerous />
