@@ -743,7 +743,10 @@ function VotingScreen({ email, onDone }) {
   const rightPhoto = DECK[rightIdx];
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center px-4 sm:px-6 py-6 sm:py-8">
+    <div
+      className="min-h-screen w-full flex flex-col items-center px-4 sm:px-6 py-6 sm:py-8"
+      style={{ zoom: 0.67 }}
+    >
       {/* Top bar: progress */}
       <div className="w-full max-w-[1180px] pd-fade-up">
         <div className="flex items-baseline justify-between mb-3">
